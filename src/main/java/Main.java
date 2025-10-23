@@ -3,6 +3,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.stream.Stream;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
@@ -37,9 +38,13 @@ public class Main {
                try {
                    byte[] blob = Files.readAllBytes(path); //Should be ok for now with small files
                    byte[] blobDecoded = deflateZlibByte(blob);
-                   String blobString = new String(blobDecoded);
+                   //Find position of null byte
+                   int headerEnd = 0;
+                   while (headerEnd < blobDecoded.length && blobDecoded[headerEnd] != 0) {
+                       headerEnd++;
+                   }
                    //File content is of format: blob <blob-size>\0<content>
-                   System.out.println(blobString.substring(blobString.indexOf("\0") + 1));
+                   System.out.write(blobDecoded, headerEnd + 1, blobDecoded.length - headerEnd - 1);
                } catch (Exception ex) {
                    throw new RuntimeException(ex);
                }
@@ -54,13 +59,12 @@ public class Main {
       byte[] output = new byte[bytes.length];
       try {
           inflater.setInput(bytes);
-          inflater.inflate(output);
+          int len = inflater.inflate(output);
+          return Arrays.copyOf(output, len);
       } catch (DataFormatException e) {
           throw new RuntimeException(e);
       } finally {
           inflater.end();
       }
-
-      return output;
   }
 }
