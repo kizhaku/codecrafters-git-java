@@ -37,7 +37,7 @@ public class Main {
 
                try {
                    byte[] blob = Files.readAllBytes(path); //Should be ok for now with small files
-                   byte[] blobDecoded = deflateZlibByte(blob);
+                   byte[] blobDecoded = inflateZlibByte(blob);
                    //Find position of null byte
                    int headerEnd = 0;
                    while (headerEnd < blobDecoded.length && blobDecoded[headerEnd] != 0) {
@@ -54,7 +54,7 @@ public class Main {
      }
   }
 
-  public static byte[] deflateZlibByte(byte[] bytes) {
+  public static byte[] inflateZlibByte(byte[] bytes) {
       Inflater inflater = new Inflater();
       byte[] output = new byte[bytes.length];
       try {
