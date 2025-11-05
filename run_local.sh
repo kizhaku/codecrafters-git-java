@@ -2,7 +2,7 @@
 
 set -e
 
-execDir="/tmp/testing/git"
+execDir="/tmp/testing"
 scriptPath="/Users/arunk/Documents/Git/codecrafters-git-java/your_program.sh"
 
 # Run locally in /tmp/testing/git folder to prevent override of repo .git

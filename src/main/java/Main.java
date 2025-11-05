@@ -1,16 +1,16 @@
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
+import model.GitTree;
+import model.TreeEntry;
+
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
-import java.util.stream.Stream;
+import java.util.List;
 import java.util.zip.DataFormatException;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
@@ -20,7 +20,7 @@ public class Main {
      final String command = args[0];
 
      switch (command) {
-       case "init" -> {
+        case "init" -> {
          final File root = new File(".git");
          new File(root, "objects").mkdirs();
          new File(root, "refs").mkdirs();
@@ -33,7 +33,7 @@ public class Main {
          } catch (IOException e) {
            throw new RuntimeException(e);
          }
-       }
+        }
        case "cat-file" -> {
            if (args.length >= 3) {
                var blobPath = ".git/objects/%s/%s";
@@ -43,7 +43,7 @@ public class Main {
                Path path = Path.of(blobPath.formatted(blobDir, blobName));
 
                byte[] blob = Files.readAllBytes(path); //Should be ok for now with small files
-               byte[] blobDecoded = inflateZlibByte(blob);
+               byte[] blobDecoded = decompressZlibByte(blob);
                //Find position of null byte
                int headerEnd = 0;
                while (headerEnd < blobDecoded.length && blobDecoded[headerEnd] != 0) {
@@ -81,20 +81,84 @@ public class Main {
                }
 
                Files.move(tempFile, newPath, StandardCopyOption.REPLACE_EXISTING);
-               deflateZlibFile(newPath);
+               compressZlibFile(newPath);
+           }
+       }
+
+       case "ls-tree" -> {
+           String basePath = ".git/objects/%s/%s";
+
+           if (args.length >= 2) {
+               Path path = Path.of(basePath.formatted(args[2].substring(0, 2), args[2].substring(2)));
+               byte[] fileBytesCompressed = Files.readAllBytes(path);
+               byte[] fileBytesDecompressed = decompressZlibByte(fileBytesCompressed);
+
+               InputStreamReader inStream = new InputStreamReader(new ByteArrayInputStream(fileBytesDecompressed));
+               int in;
+               boolean headerFound = false;
+               StringBuilder mode = new StringBuilder();
+               StringBuilder name = new StringBuilder();
+               StringBuilder sha = new StringBuilder();
+               int index = 1;
+               boolean nameEnd = false;
+               boolean modeEnd = false;
+               List<TreeEntry> entries = new ArrayList<>();
+
+               while ((in = inStream.read()) != -1) {
+                   if (in == 0 && !headerFound) {
+                       headerFound = true;
+                       index = 0;
+                   }
+
+                   if (headerFound) {
+                       if (index <= 6 && !modeEnd) {
+                           mode.append((char) in);
+                       }
+
+                       if (index >= 8 && !nameEnd) {
+                           modeEnd = true;
+
+                           if (in == 0) {
+                               nameEnd = true;
+                               index = 0;
+                           } else {
+                               name.append((char) in);
+                           }
+                       }
+
+                       if (nameEnd && index <= 20) {
+                           sha.append((char) in);
+
+                           if (index == 20) {
+                               nameEnd = false;
+                               modeEnd = false;
+                               index = 0;
+
+                               entries.add(new TreeEntry(mode.toString(), name.toString(), sha.toString()));
+                           }
+                       }
+                   }
+                   
+                   index = index + 1;
+               }
+
+               GitTree gitTree = new GitTree(entries);
+
+               gitTree.getEntries().forEach(t -> System.out.println(t.getName()));
            }
        }
        default -> System.out.println("Unknown command: " + command);
      }
   }
 
-  public static byte[] inflateZlibByte(byte[] bytes) {
+  public static byte[] decompressZlibByte(byte[] bytes) {
       Inflater inflater = new Inflater();
-      byte[] output = new byte[bytes.length];
+      byte[] buffer = new byte[bytes.length];
+
       try {
           inflater.setInput(bytes);
-          int len = inflater.inflate(output);
-          return Arrays.copyOf(output, len);
+          int len = inflater.inflate(buffer);
+          return Arrays.copyOf(buffer, len);
       } catch (DataFormatException e) {
           throw new RuntimeException(e);
       } finally {
@@ -102,7 +166,7 @@ public class Main {
       }
   }
 
-  public static void deflateZlibFile(Path path) throws IOException {
+  public static void compressZlibFile(Path path) throws IOException {
       Path temp = Files.createTempFile("compress-", ".tmp");
       try (
         InputStream in = Files.newInputStream(path);
