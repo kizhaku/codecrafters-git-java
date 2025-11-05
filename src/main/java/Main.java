@@ -86,65 +86,50 @@ public class Main {
        }
 
        case "ls-tree" -> {
+           /**
+            * Format:
+            *   tree <size>\0
+            *   <mode> <name>\0<20_byte_sha>
+            *   <mode> <name>\0<20_byte_sha>
+            */
            String basePath = ".git/objects/%s/%s";
 
            if (args.length >= 2) {
                Path path = Path.of(basePath.formatted(args[2].substring(0, 2), args[2].substring(2)));
                byte[] fileBytesCompressed = Files.readAllBytes(path);
-               byte[] fileBytesDecompressed = decompressZlibByte(fileBytesCompressed);
-
-               InputStreamReader inStream = new InputStreamReader(new ByteArrayInputStream(fileBytesDecompressed));
-               int in;
-               boolean headerFound = false;
-               StringBuilder mode = new StringBuilder();
-               StringBuilder name = new StringBuilder();
-               StringBuilder sha = new StringBuilder();
-               int index = 1;
-               boolean nameEnd = false;
-               boolean modeEnd = false;
+               byte[] bytesDecomp = decompressZlibByte(fileBytesCompressed);
                List<TreeEntry> entries = new ArrayList<>();
+               int i = 0;
 
-               while ((in = inStream.read()) != -1) {
-                   if (in == 0 && !headerFound) {
-                       headerFound = true;
-                       index = 0;
-                   }
+               //skipping header
+               while (bytesDecomp[i] != 0x00) { i++; }
+               i++;
 
-                   if (headerFound) {
-                       if (index <= 6 && !modeEnd) {
-                           mode.append((char) in);
-                       }
+               while (i < bytesDecomp.length) {
+                   int shaCount = 20;
 
-                       if (index >= 8 && !nameEnd) {
-                           modeEnd = true;
+                   //Get mode
+                   int start = i;
+                   while (bytesDecomp[i] != 0x20) { i++; } // 0x20 - byte value for space ' '
+                   String mode = new String(bytesDecomp, start, i - start);
+                   i++;
 
-                           if (in == 0) {
-                               nameEnd = true;
-                               index = 0;
-                           } else {
-                               name.append((char) in);
-                           }
-                       }
+                   //Get name
+                   start = i;
+                   while (bytesDecomp[i] != 0x00) { i++; }// 0x00 - byte value for \0
+                   String name = new String(bytesDecomp, start, i - start);
+                   i++;
 
-                       if (nameEnd && index <= 20) {
-                           sha.append((char) in);
+                   //Get sha
+                   start = i;
+                   while (shaCount > 0) { shaCount--; i++; } // 20 bytes long
+                   String sha = new String(bytesDecomp, start, i - start);
+                   i++;
 
-                           if (index == 20) {
-                               nameEnd = false;
-                               modeEnd = false;
-                               index = 0;
-
-                               entries.add(new TreeEntry(mode.toString(), name.toString(), sha.toString()));
-                           }
-                       }
-                   }
-                   
-                   index = index + 1;
+                   entries.add(new TreeEntry(mode, name, sha));
                }
 
-               GitTree gitTree = new GitTree(entries);
-
-               gitTree.getEntries().forEach(t -> System.out.println(t.getName()));
+               entries.forEach(e -> System.out.println(e.getName()));
            }
        }
        default -> System.out.println("Unknown command: " + command);
